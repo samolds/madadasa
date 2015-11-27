@@ -11,43 +11,60 @@ var Globals = {
   totalFrames: 4000,
   canvasId: "viewport",
   didMove: false,
-  selectedBody: false
+  selectedBody: false,
+  globAccel: false,
 };
 
 function onPropertyChanged(property, value){
 	console.log(property + "," + value);
 	
 	var world = Globals.world;
-	var body = Globals.selectedBody;	
+	var body = Globals.selectedBody;
 	var initStates = Globals.initStates;
-	
-	switch(property)
-	{		
-		case 'posx':
-			body.state.pos.x = value;
-			initStates[world.getBodies().indexOf(body)].pos.x = body.state.pos.x;
-			break;
-		case 'posy':
-			body.state.pos.y = value;
-			initStates[world.getBodies().indexOf(body)].pos.y = body.state.pos.y;
-			break;
-		case 'velx':
-			body.state.vel.x = value;
-			initStates[world.getBodies().indexOf(body)].vel.x = body.state.vel.x;
-			break;
-		case 'vely':
-			body.state.vel.y = value;
-			initStates[world.getBodies().indexOf(body)].vel.y = body.state.vel.y;
-			break;
-		case 'accx':
-			body.state.acc.x = value;
-			initStates[world.getBodies().indexOf(body)].acc.x = body.state.acc.x;
-			break;
-		case 'accy':
-			body.state.acc.y = value;
-			initStates[world.getBodies().indexOf(body)].acc.y = body.state.acc.y;
-			break;
-	}
+
+  var floatVal = parseFloat(value);
+  /* Skip switch statement of a string was inputted for any
+     input field other than name */
+  switch(property) {
+    case 'posx':
+      body.state.pos.x = floatVal;
+      initStates[world.getBodies().indexOf(body)].pos.x = body.state.pos.x;
+      break;
+    case 'posy':
+      body.state.pos.y = floatVal;
+      initStates[world.getBodies().indexOf(body)].pos.y = body.state.pos.y;
+      break;
+    case 'velx':
+      body.state.vel.x = floatVal;
+      initStates[world.getBodies().indexOf(body)].vel.x = body.state.vel.x;
+      break;
+    case 'vely':
+      body.state.vel.y = floatVal;
+      initStates[world.getBodies().indexOf(body)].vel.y = body.state.vel.y;
+      break;
+    case 'accx':
+      body.state.acc.x = floatVal;
+      initStates[world.getBodies().indexOf(body)].acc.x = body.state.acc.x;
+      break;
+    case 'accy':
+      body.state.acc.y = floatVal;
+      initStates[world.getBodies().indexOf(body)].acc.y = body.state.acc.y;
+      break;
+    case 'mass':
+      body.mass = floatVal;
+      initStates[world.getBodies().indexOf(body)].mass = body.mass;
+      break;
+    case 'nickname':
+      body.nickname = value;
+      initStates[world.getBodies().indexOf(body)].nickname = body.nickname;
+      break;
+    case 'glob-xaccel':
+      Globals.globAccel._acc.x = floatVal;
+      break;
+    case 'glob-yaccel':
+      Globals.globAccel._acc.y = floatVal;
+      break;
+  }
 
 	simulate();
 	drawSimulator(0);
@@ -91,14 +108,21 @@ function drawLoop() {
 
 
 /* Shows elements values in html elements */
-function displayElementValues(st) {
-  if (st) {
-    $('#properties-position-x').val(st.pos.x);
-    $('#properties-position-y').val(st.pos.y);
-    $('#properties-velocity-x').val(st.vel.x);
-    $('#properties-velocity-y').val(st.vel.y);
-    $('#properties-acceleration-x').val(st.acc.x);
-    $('#properties-acceleration-y').val(st.acc.y);
+function displayElementValues(bod) {
+  if (bod) {
+    $('#properties-position-x').val(bod.state.pos.x);
+    $('#properties-position-y').val(bod.state.pos.y);
+    $('#properties-velocity-x').val(bod.state.vel.x);
+    $('#properties-velocity-y').val(bod.state.vel.y);
+    $('#properties-acceleration-x').val(bod.state.acc.x);
+    $('#properties-acceleration-y').val(bod.state.acc.y);
+    $('#properties-mass').val(bod.mass);
+    $('#properties-nickname').val(bod.nickname);
+    if (bod.nickname) {
+      $('#properties-nickname-title').text(bod.nickname + " ");
+    } else {
+      $('#properties-nickname-title').text("");
+    }
   } else {
     $('#properties-position-x').val("");
     $('#properties-position-y').val("");
@@ -106,6 +130,30 @@ function displayElementValues(st) {
     $('#properties-velocity-y').val("");
     $('#properties-acceleration-x').val("");
     $('#properties-acceleration-y').val("");
+    $('#properties-mass').val("");
+    $('#properties-name').val("");
+    $('#properties-nickname-title').text("");
+  }
+}
+
+
+function toggleGlobalProp() {
+  var propWin = $("#global-properties")[0].classList;
+  if (propWin.contains("hide")) {
+    propWin.remove("hide");
+  } else {
+    propWin.add("hide");
+  }
+}
+
+
+function renderWorld() {
+  Globals.world.render();
+  var propWin = $("#properties")[0].classList;
+  if (Globals.selectedBody) {
+    propWin.remove("hide");
+  } else if (!propWin.contains("hide")) {
+    propWin.add("hide");
   }
 }
 
@@ -120,8 +168,8 @@ function highlightSelection(body) {
   canvas.ctx.strokeStyle = '#ff0000';
   canvas.ctx.lineWidth = 2;
 
+  renderWorld();
   var loc = body.state.pos;
-  Globals.world.render(); // Wipes existing highlight border
   canvas.ctx.strokeRect(loc.x-halfw, loc.y-halfh, halfw*2, halfh*2);						
 
   /*	
@@ -136,13 +184,6 @@ function highlightSelection(body) {
   canvas.ctx.strokeRect(0, 0	, halfw*2, halfh*2);				
   canvas.ctx.rotate(45 * Math.PI/180);
   */
-
-  var propWin = $("#properties")[0].classList;
-  if (Globals.selectedBody) {
-    propWin.remove("hide");
-  } else if (!propWin.contains("hide")) {
-    propWin.add("hide");
-  }
 }
 
 
@@ -155,8 +196,8 @@ function drawSimulator(n) {
 		world.getBodies()[i].state = Globals.states[i][n];
 	}
 
-	world.render();
-  displayElementValues(selectedBody.state);
+  renderWorld();
+  displayElementValues(selectedBody);
   if (selectedBody) {
     highlightSelection(selectedBody);
   }
@@ -204,7 +245,7 @@ function simulate() {
     Globals.states[i] = [];
   }
   
-//Globals.world.step();	// Calling step once required for initialization?
+  //Globals.world.step();	// Calling step once required for initialization?
   
   // For each frame
   for (i = 0; i < Globals.totalFrames; i++) {
@@ -307,4 +348,12 @@ $(document).ready(function() {
   $('#properties-velocity-y').on("change", function(){ onPropertyChanged('vely', $('#properties-velocity-y').val()); }); 
   $('#properties-acceleration-x').on("change", function(){ onPropertyChanged('accx', $('#properties-acceleration-x').val()); }); 
   $('#properties-acceleration-y').on("change", function(){ onPropertyChanged('accy', $('#properties-acceleration-y').val()); }); 
+  $('#properties-mass').on("change", function(){ onPropertyChanged('mass', $('#properties-mass').val()); }); 
+  $('#properties-nickname').on("change", function(){ onPropertyChanged('nickname', $('#properties-nickname').val()); }); 
+
+  $('#glob-xaccel').val(Globals.globAccel._acc.x);
+  $('#glob-yaccel').val(Globals.globAccel._acc.y);
+  
+  $('#glob-xaccel').on("change", function(){ onPropertyChanged('glob-xaccel', $('#glob-xaccel').val()); }); 
+  $('#glob-yaccel').on("change", function(){ onPropertyChanged('glob-yaccel', $('#glob-yaccel').val()); }); 
 });

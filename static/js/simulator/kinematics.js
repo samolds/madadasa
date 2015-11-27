@@ -6,9 +6,8 @@ function Kinematics1DModule() {
       var viewportBounds = Physics.aabb(0, 0, canvasEl.clientWidth, canvasEl.clientHeight);// bounds of the window
       var edgeBounce;
       var renderer;
-	  var integrator;	  
-	  world.timestep(1); // TODO: should base timestep on dt option
-
+      var integrator;	  
+      world.timestep(1); // TODO: should base timestep on dt option
             
       // create a renderer
       renderer = Physics.renderer('canvas', {el: canvasId});
@@ -59,8 +58,8 @@ function Kinematics1DModule() {
         }
         world.add(component);
         		
-		// Must enforce invariant: Index of body in initStates must match index of body in world.getBodies()		
-		Globals.initStates.push(cloneState(component.state));
+        // Must enforce invariant: Index of body in initStates must match index of body in world.getBodies()		
+        Globals.initStates.push(cloneState(component.state));
 
         // Resimulate using newly added component
         simulate();
@@ -93,7 +92,7 @@ function Kinematics1DModule() {
 			var state = Globals.states[idx][Globals.frame];
 			Globals.selectedBody = data.body;
 								
-      displayElementValues(state);
+      displayElementValues(Globals.selectedBody);
       highlightSelection(data.body);
 		}
 	});
@@ -102,7 +101,7 @@ function Kinematics1DModule() {
 			if(Globals.running) toggleSimulator();
 			data.body.state.pos.x = data.x;
 			data.body.state.pos.y = data.y;
-			Globals.world.render();
+      renderWorld();
 			Globals.didMove = true;
 		}
 	});
@@ -125,7 +124,7 @@ function Kinematics1DModule() {
 		Globals.selectedBody = false;
 		console.log("poke: " + data.x + "," + data.y);
     displayElementValues(false);
-    Globals.world.render(); // To remove any drawn borders
+    renderWorld();
 	});
 	
 	  
@@ -135,9 +134,17 @@ function Kinematics1DModule() {
         Physics.behavior('constant-acceleration'),
         Physics.behavior('body-impulse-response'),
         Physics.behavior('body-collision-detection'),
-		Physics.behavior('sweep-prune'),
+        Physics.behavior('sweep-prune'),
         edgeBounce
       ]);
+
+      var beh = world.getBehaviors();
+      for (var i = 0; i < beh.length; i++) {
+        if (beh[i].name === "constant-acceleration") {
+          Globals.globAccel = beh[i];
+        }
+      }
+
     });
   } // end initWorld
 
