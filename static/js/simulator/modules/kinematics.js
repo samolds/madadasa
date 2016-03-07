@@ -13,6 +13,10 @@ function initWorld() {
       var edgeBounce;
       var renderer;
       var integrator;    
+      
+      var variableMap = Globals.variableMap;
+      var bodyConstants = Globals.bodyConstants;
+      
       world.timestep(0.5); // TODO: should base timestep on dt option
             
       // create a renderer
@@ -25,11 +29,32 @@ function initWorld() {
       integrator = Physics.integrator('principia-integrator', {});
       world.add(integrator);
 
+      // Default image: use pointmass image. Can be changed from select element.
+      var img = document.createElement("img");
+      img.setAttribute("src", "/static/img/toolbox/origin.png");
+      img.setAttribute("width", "20");
+      img.setAttribute("height", "20");
+  
+      // Add the PhysicsJS origin
+      bodyConstants.push({ctype:"kinematics1D-origin"});
+      variableMap[0].push({});
+      var origin = Physics.body('circle', {
+                treatment:"ghost",
+                x: Globals.origin[0],
+                y: swapYpos(Globals.origin[1], false),
+                radius: 25,
+                view: img,
+                styles: {
+                  fillStyle: '#4d4d4d',
+                  angleIndicator: '#ffffff'
+                }
+              });
+              
+      world.add(origin);
+      Globals.keyframeStates[0].push(cloneState(origin.state));
+      
       world.on('addComponent', function(data) {
-        
-        var variableMap = Globals.variableMap;
-        var bodyConstants = Globals.bodyConstants;
-
+               
         bodyConstants.push({ctype:data.type});
         
         switch(data.type){
@@ -46,6 +71,9 @@ function initWorld() {
           case "kinematics1D-pulley":
             addPulley(data);
             break;
+          case "kinematics1D-origin":
+            moveOrigin(data);
+            break;
         }
     
         drawMaster();
@@ -54,7 +82,7 @@ function initWorld() {
       // constrain objects to these bounds
       edgeBounce = Physics.behavior('edge-collision-detection', {
         aabb: viewportBounds,
-        restitution: 0.99,
+        restitution: 0.8,
         cof: 0.8
       });
 
@@ -69,23 +97,29 @@ function initWorld() {
       // Note: PhysicsJS zeroes out velocity (ln 8445) - commented out for our simulator    
       world.on('interact:grab', function( data ){        
         if(data.body){          
-          selectBody(bIndex(data.body), true);
+          selectBody(bIndex(data.body), bIndex(data.body) === 0); // Only switch tabs if not the origin!
         }
       });
   
   world.on('interact:move', function( data ){
     if(data.body) {
-            
-      if(bIndex(data.body) === Globals.originObject)
-      {
-        Globals.origin = [data.x, data.y];
+      var index = bIndex(data.body);
+      if(index === Globals.originObject || index === 0)
+      {        
+        Globals.origin = [data.x, swapYpos(data.y, false)];
         $("#glob-xorigin").val(data.x) ; 
-        $("#glob-yorigin").val(data.y) ;
+        $("#glob-yorigin").val(swapYpos(data.y, false)) ;
       }
       
       Globals.didMove = true;
-      onPropertyChanged("posx", data.x);          
-      onPropertyChanged("posy", data.y);
+      setNoSelect(true);
+      onPropertyChanged(index, "posx", data.x);
+      onPropertyChanged(index, "posy", swapYpos(data.y, false));
+      
+      if(bIndex(data.body) === 0){        
+        document.getElementById("globalprops-tab").click();
+      }
+        
       drawMaster();
     }
   });
@@ -93,21 +127,30 @@ function initWorld() {
   world.on('interact:release', function( data ){    
     // Note that PhysicsJS adds to velocity vector upon release - commented out for our simulator
     if(data.body && Globals.didMove){
-        
+        var index = bIndex(data.body);
         // Make move as complete
         Globals.didMove = false;
-
-        // Resimulate if there is only one keyframe
-        onPropertyChanged("posx", data.x);
-        onPropertyChanged("posy", data.y);
+        setNoSelect(false);
         
-        if(Globals.bodyConstants[bIndex(data.body)].ctype == "kinematics1D-mass")
+        data.x = clamp(0, data.x, $('#' + Globals.canvasId).children()[0].width);
+        data.y = clamp(0, data.y, $('#' + Globals.canvasId).children()[0].height);
+        
+        onPropertyChanged(index, "posx", data.x);
+        onPropertyChanged(index, "posy", swapYpos(data.y, false));
+        
+        if(Globals.bodyConstants[index].ctype == "kinematics1D-mass")
         {
           attachSpring(data.body);
           detachSpring(data.body);
-          attachPulley(data.body);
+          attachPulley(data.body);          
         }
+        
+        if(Globals.bodyConstants[index].ctype == "kinematics1D-origin")
+          moveOrigin({"x":data.x, "y":data.y});
 
+        // Resimulate if there is only one keyframe
+        if(Globals.numKeyframes == 1) attemptSimulation();
+        
         drawMaster();
     }
   });
@@ -238,6 +281,11 @@ function initWorld() {
       }       
     });
     
+    if(Globals.world.getBodies()[0].view.complete)
+      drawMaster();
+    else
+      Globals.world.getBodies()[0].view.onload = function() { drawMaster(); };
+    
      if(!json || json == "{}")
       return;
     
@@ -246,6 +294,7 @@ function initWorld() {
     {
       if(key == "keyframeStates") continue;
       if(key == "bodyConstants") continue;
+      if(key == "origin") continue;
       Globals[key] = restore[key];
     }
     
@@ -255,9 +304,14 @@ function initWorld() {
     var tempKF = restore.keyframeStates;
     var tempBC = restore.bodyConstants;
     
-    for(var i=0; i<tempBC.length; i++)
+    for(var i=0; i<tempKF.length-1; i++)
     {
-      var type = tempBC[i].ctype;
+      addKeyframe();
+    }
+    
+    for(var i=1; i<tempBC.length; i++)
+    {
+      var type = tempBC[i].ctype;      
       var x = tempKF[0][i].pos._[0];
       var y = tempKF[0][i].pos._[1];
       var data = { 'type': type, 'x': x, 'y': y, 'blockSimulation':true};
@@ -266,19 +320,22 @@ function initWorld() {
       Globals.bodyConstants[i] = tempBC[i];
 
       Globals.selectedBody = Globals.world.getBodies()[Globals.world.getBodies().length-1];
+      var index = Globals.world.getBodies().length-1;
       if (type == "kinematics1D-mass" || type == "kinematics1D-pulley") {
-        onPropertyChanged("image", tempBC[i].img, false);
-        onPropertyChanged("size", tempBC[i].size, false);
+        onPropertyChanged(index, "image", tempBC[i].img);
+        onPropertyChanged(index, "size", tempBC[i].size);
       } else if (type == "kinematics1D-ramp") {
-        onPropertyChanged("width", tempBC[i].width, false);
-        onPropertyChanged("height", tempBC[i].height, false);
+        onPropertyChanged(index, "width", tempBC[i].width);
+        onPropertyChanged(index, "height", tempBC[i].height);
+        onPropertyChanged(index, "angle", tempBC[i].angle);
+        onPropertyChanged(index, "orientation", tempBC[i].orientation);
       }
       Globals.selectedBody = false;
     }
     
     for(var i=0; i<tempKF.length; i++)
       for(var j=0; j<tempKF[i].length; j++)
-      {
+      {        
         var KF = tempKF[i][j];
         Globals.keyframeStates[i][j].pos.x = KF.pos._[0];
         Globals.keyframeStates[i][j].pos.y = KF.pos._[1];
@@ -289,12 +346,27 @@ function initWorld() {
         var angular = KF.angular;
         Globals.keyframeStates[i][j].angular = {acc:angular.acc,vel:angular.vel,pos:angular.pos};
       }
+      
+      moveOrigin({"x":restore["origin"][0], "y":swapYpos(restore["origin"][1], false)});
     
-    setStateKF(0);
+    
+    for(var i=tempKF.length-1; i>=0; i--){
+      Globals.keyframe = i;
+      drawMaster();
+    }
+    
+    updateCoords(Globals.coordinateSystem);
+    if(Globals.coordinateSystem == "polar"){
+      $("#coord-sys").children()[1].removeAttribute("selected");
+      $("#coord-sys").children()[2].setAttribute("selected", "selected");
+    }
     
     if(Globals.timelineReady)
       simulate();
 
+    highlightKeycanvas(0);
+    Globals.keyframe = 0;
+    setStateKF(0);
     drawMaster();
   }
   

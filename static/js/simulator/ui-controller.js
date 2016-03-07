@@ -40,31 +40,7 @@ function handleUIDragStop(event, ui){
 
   var data = { 'x': cx-vleft, 'y': cy-vtop};
 
-  var world = Globals.world;
-  var bodies = world.getBodies();
-  var delta = Globals.delta;
-    
-  // Attach the origin to a body if within delta pixels
-  var detach = true;
-  for(var j=0; j<bodies.length; j++){
-    var body = bodies[j];
-    if(distance(body.state.pos.x, body.state.pos.y, data.x, data.y) <= delta){
-      detach = false;
-      Globals.originObject = j;
-      
-      // Update data to point to object position
-      data.x = body.state.pos.x;
-      data.y = body.state.pos.y;
-    }
-  }
-  
-  if(detach && (Globals.originObject === 0 || Globals.originObject))  
-    Globals.originObject = false;
-    
-  Globals.origin = [data.x, data.y];  
-  $("#glob-xorigin").val(data.x) ; 
-  $("#glob-yorigin").val(data.y) ;
-  
+  moveOrigin(data);  
   drawMaster();
 }
 
@@ -152,9 +128,27 @@ function toggleSimulator(){
   }
 }
 
+// Sets a boolean property to the specified value
+function updateBooleanProperty(body, property, value){
+  Globals.bodyConstants[bIndex(body)][property] = value;
+  
+  // Convert truthy/falsy into strictly true/false
+  value = value? true: false;
+  
+  // Special case: Handle showing/hiding the graph div
+  if(property === "showGraph"){
+    var allHidden = (graphBodyIndices().length === 0);
+    if(allHidden){ $("#pvaGraphContainer").hide(); }         
+    else { $("#pvaGraphContainer").show(); updatePVAChart(); }
+  }
+  
+  drawMaster();
+}
+
 // Handler for clicking a mini canvas and setting state to that keyframe
-function selectKeyframe(event){
-	var frame = event.target.id.split("-")[1];
+// n can either be a string containing a dash followed by the keyframe number or the number itself
+function selectKeyframe(n){
+	var frame = isNaN(n)? n.target.id.split("-")[1]: n;
 	Globals.keyframe = parseInt(frame);  
   highlightKeycanvas(frame);
   
@@ -166,15 +160,12 @@ function selectKeyframe(event){
 
   // Handle assigning transparency to objects with unknown positions
   var variables = Globals.variableMap;
-  for(var i=0; i < Globals.world.getBodies().length; i++)
-  {
-    if(!isNaN(variables[frame][i].posx) && !isNaN(variables[frame][i].posy))
-    {
+  for(var i=1; i < Globals.world.getBodies().length; i++){
+    if(!isNaN(variables[frame][i].posx) && !isNaN(variables[frame][i].posy)){
       if(Globals.bodyConstants[i].alpha)
         delete Globals.bodyConstants[i].alpha;
     }
-    else
-    {
+    else{
       Globals.bodyConstants[i].alpha = 0.5;  
     }
   }
@@ -184,10 +175,11 @@ function selectKeyframe(event){
 }
 
 // Wrapper for updating properties followed by immediate resimulate and redraw
-function updatePropertyRedraw(property, value){
+function updatePropertyRedraw(body, property, value){
 
   // Special case for Polar coordinates
-  if(Globals.coordinateSystem == "polar"){
+  if(Globals.coordinateSystem == "polar" && $.inArray(property, ["posx","posy","velx","vely","accx","accy"]) !== -1){
+    
     
     // Convert from Polar input to Cartesian coordinate
     var point;
@@ -196,7 +188,7 @@ function updatePropertyRedraw(property, value){
       other = $('#general-properties-position-y').val();
       point = polar2Cartesian([value, other]);
     }
-    else if(property == "posy") {
+    else if(property == "posy") {      
       other = $('#general-properties-position-x').val();
       point = polar2Cartesian([other, value]);
     }
@@ -206,6 +198,7 @@ function updatePropertyRedraw(property, value){
       point = polar2Cartesian([value, other]);
     }
     else if(property == "vely") {
+      value *= -1; // Un-invert y vel. value because it's really an angle (only y vel/acc are inverted in base.js)
       other = $('#pointmass-properties-velocity-x').val();
       point = polar2Cartesian([other, value]);
     }
@@ -215,6 +208,7 @@ function updatePropertyRedraw(property, value){
       point = polar2Cartesian([value, other]);
     }
     else if(property == "accy") {
+      value *= -1; // Un-invert y acc. value because it's really an angle (only y vel/acc are inverted in base.js)
       other = $('#pointmass-properties-acceleration-x').val();
       point = polar2Cartesian([other, value]);
     }
@@ -240,7 +234,10 @@ function updatePropertyRedraw(property, value){
   if(property == "posx" || property == "posy")
     value = origin2PhysicsScalar(property.slice(-1), value);    
   value = convertUnit(value, property, true);
-  onPropertyChanged(property, value, true);
+  onPropertyChanged(bIndex(body), property, value);
+  
+  if(Globals.numKeyframes == 1) attemptSimulation();
+  
   drawMaster();
 }
 
@@ -327,16 +324,6 @@ function removeKeyframe(event){
   if(index == Globals.keyframe){
     // select Globals.keyframe -1
   }
-}
-
-function updateOrigin(coordinate, value){
-  if(coordinate == "x")
-    Globals.origin[0] = value;
-  else 
-    Globals.origin[1] = value;
-  
-  // Redraw (forces update of displayed values)
-  drawMaster();
 }
 
 function updateLengthUnit(factor){
@@ -504,7 +491,7 @@ function populateOverview(e) {
 
   $list.html("");
 
-  for(var i = 0; i < bodies.length; i++)
+  for(var i = 1; i < bodies.length; i++)
   {
     var img;
     //img = bodies[i].view;
@@ -527,10 +514,10 @@ function populateOverview(e) {
      $list.append(
     "<li >" +
       "<div class ='row clickable'>"+
-       "<div class = ' col s4' onclick = 'selectBody(" + i + ", false)'>"+
+       "<div class = ' col s4' onclick = 'selectBody(" + i + ")'>"+
           "<img src='" + img + "' width='20' component='kinematics1D-mass'>"+
        "</div>"+
-       "<div class = 'col s4' onclick = 'selectBody(" + i + ", false)'>"+
+       "<div class = 'col s4' onclick = 'selectBody(" + i + ")'>"+
         consts[i].nickname +
        "</div>"+
        "<div class = 'col s4' onclick = 'deleteBody(" + i + ")'>"+
@@ -661,8 +648,12 @@ function deleteBody(bodyIndex){
   }
 }
 
-function selectBody(bodyIndex, switchTab){
+function selectBody(bodyIndex){
   Globals.selectedBody = Globals.world.getBodies()[bodyIndex];
-  if(switchTab) drawProperties();
+  if(bodyIndex !== 0) 
+    $("#elementprops-tab").click();
+  else
+    $("#globalprops-tab").click();
+    
   drawMaster();
 }

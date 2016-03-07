@@ -50,18 +50,20 @@ function displayVariableValues(body){
       acceleration = cartesian2Polar([acceleration[0], acceleration[1]]);
     }
     
+    var mod = (Globals.coordinateSystem == "cartesian")? -1: 1;
+    
     // TODO fix unit conversions
-    $('#general-properties-position-x').val(position[0].toFixed(precision));
+    $('#general-properties-position-x').val(position[0].toFixed(precision));    
     $('#general-properties-position-y').val(position[1].toFixed(precision));
 
     if(velocity[0]) {
       $('#pointmass-properties-velocity-x').val((velocity[0] == "?")? "":velocity[0].toFixed(precision));
-      $('#pointmass-properties-velocity-y').val((velocity[1] == "?")? "":(-1 * velocity[1]).toFixed(precision));
+      $('#pointmass-properties-velocity-y').val((velocity[1] == "?")? "":(mod * velocity[1]).toFixed(precision));
     }
 
     if(acceleration[0]) {
       $('#pointmass-properties-acceleration-x').val(acceleration[0].toFixed(precision));
-      $('#pointmass-properties-acceleration-y').val(acceleration[1].toFixed(precision));
+      $('#pointmass-properties-acceleration-y').val(mod * acceleration[1].toFixed(precision));
     }
   } 
 }
@@ -100,16 +102,23 @@ function displayElementValues(bod){
 
     $('#general-properties-nickname').val(constants.nickname);
     $('#general-properties-position-x').val(position[0].toFixed(precision));
+    
+    if(Globals.coordinateSystem == "cartesian") position[1] = swapYpos(position[1], true);
+    
     $('#general-properties-position-y').val(position[1].toFixed(precision));
 
+    // Invert coordinate system if using cartesian coordinates for y value
+    var mod = (Globals.coordinateSystem == "cartesian")? -1: 1;
+    
     $('#pointmass-properties-velocity-x').val(convertUnit(velocity[0], "velx", false).toFixed(precision));
-    $('#pointmass-properties-velocity-y').val((-1 * convertUnit(velocity[1], "vely", false)).toFixed(precision));
+    $('#pointmass-properties-velocity-y').val((mod * convertUnit(velocity[1], "vely", false)).toFixed(precision));
     $('#pointmass-properties-acceleration-x').val(convertUnit(acceleration[0], "accx", false).toFixed(precision));
-    $('#pointmass-properties-acceleration-y').val((-1 * convertUnit(acceleration[1], "accy", false)).toFixed(precision));
+    $('#pointmass-properties-acceleration-y').val((mod * convertUnit(acceleration[1], "accy", false)).toFixed(precision));
     $('#pointmass-properties-mass').val(constants.mass);
     $('#pointmass-properties-size').val(constants.size);
 
     $('#pointmass-properties-vector')[0].checked = constants.vectors;
+    $('#pointmass-properties-vector-ttt')[0].checked = constants.vectors_ttt;
     $('#pointmass-properties-pvagraph')[0].checked = constants.showGraph;
 
     $('#ramp-properties-width').val(constants.width);
@@ -174,6 +183,14 @@ function drawRopeLine(b1, b2){
   ctx.moveTo(x1 + radius,y1);  
   ctx.lineTo(x2,y2);
   ctx.stroke();
+  
+}
+
+function setNoSelect(value){
+  if(value)
+    $("*").addClass('no-select');
+  else
+    $("*").removeClass('no-select');
   
 }
 
@@ -256,6 +273,10 @@ function drawSpringLine(b1, b2){
 
 // Draws highlight box around selected element
 function highlightSelection(body, color, modifier){
+  
+  // Special case: don't highlight origin
+  if(bIndex(body) === 0) return;
+  
   var bodyDim = body.aabb();
   var width = bodyDim.hw * 2;
   var height = bodyDim.hh * 2;
@@ -314,7 +335,7 @@ function drawVectors(){
 
 // Draw a vector for the specified body, scaled using the provided arguments
 function drawVectorLine(body, maxVx, maxVy, maxAx, maxAy){
-  
+  var tipToTail = (body2Constant(body).vectors_ttt === true);
   maxVx = maxVx > 25? maxVx: 25;
   maxVy = maxVy > 25? maxVy: 25;
   maxAx = maxAx > 5? maxAx: 5;
@@ -328,6 +349,9 @@ function drawVectorLine(body, maxVx, maxVy, maxAx, maxAy){
   var canvas = Globals.world.renderer();
   var ctx = canvas.ctx;
   ctx.lineWidth = 3;
+  
+  if(!tipToTail)
+  {
   
   if(vx_amt != 0)
   {
@@ -374,6 +398,61 @@ function drawVectorLine(body, maxVx, maxVy, maxAx, maxAy){
     ctx.lineTo(body.state.pos.x - 5, body.state.pos.y + ay_amt + -Math.sign(ay_amt)*0.1*Math.abs(ay_amt));  
     ctx.stroke();
   }
+  
+  }
+  
+  if(tipToTail)
+  {    
+    
+    function getAngle(x, y){ var result = -1 * rad2deg(Math.atan2(y, x)); return (result < 0)? result + 360: result;}
+    
+    function getQuadrant(angle) { return (angle   >= 0 && angle <  90)? 1:
+                                         (angle  >= 90 && angle < 180)? 2:
+                                         (angle >= 180 && angle < 270)? 3:
+                                                                        4;
+    }
+    
+    //clr3 is mixed
+    function drawTipToTail(x, y, clr1, clr2, clr3, acc){      
+      var angle = getAngle(x, y);      
+      var quadrant = getQuadrant(angle);
+      var color = (quadrant == 1)? clr1: (quadrant == 3)? clr2: clr3;
+      var N  = magnitude(x, y) <= 20? 5: 15;      
+      var THETA = (quadrant == 1 || quadrant == 4)?
+                                                  deg2rad(45) - deg2rad(angle):
+                                                  deg2rad(45) + deg2rad(angle);
+      var dx = N * Math.cos(THETA);
+      var dy = N * Math.sin(THETA);
+    
+      if(quadrant == 1) { dx *= -1; }
+      if(quadrant == 2) { dx *= -1; dy *= -1; }
+      if(quadrant == 3) { dx *= -1; dy *= -1; }
+      if(quadrant == 4) { dx *= -1; } 
+
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(body.state.pos.x,body.state.pos.y);
+      ctx.lineTo(body.state.pos.x + x, body.state.pos.y + y);
+      ctx.lineTo(body.state.pos.x + x + dx, body.state.pos.y + y - dy);
+      ctx.stroke();
+      
+      // Draw second tip to indicate acceleration
+      if(acc){
+        ctx.beginPath();
+        ctx.moveTo(body.state.pos.x + x*0.9, body.state.pos.y + y*0.9);
+        ctx.lineTo(body.state.pos.x + x*0.9 + dx, body.state.pos.y + y*0.9 - dy);
+        ctx.stroke();
+      }
+      
+      
+    }
+  
+    if(vx_amt != 0 || vy_amt != 0)
+      drawTipToTail(vx_amt, vy_amt, '#00ff00', '#ff0000', 'yellow', false);
+    
+    if(ax_amt != 0 || ay_amt != 0)
+      drawTipToTail(ax_amt, ay_amt, '#009900', '#990000', 'yellow', true);
+  }
 }
 
 // Copy global canvas into canvas for keyframe n
@@ -385,42 +464,11 @@ function viewportToKeyCanvas(n){
   keycanvas.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, keycanvas.width, keycanvas.height);
 }
 
-function drawOrigin(){
-  var canvas = Globals.world.renderer();
-  var ctx = canvas.ctx;
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#ff0000';    
-  
-  
-  var length = 10;
-  
-  ctx.beginPath();
-  ctx.moveTo(Globals.origin[0], Globals.origin[1]);
-  ctx.lineTo(Globals.origin[0] + length, Globals.origin[1]);
-  ctx.stroke();
-  
-  ctx.beginPath();
-  ctx.moveTo(Globals.origin[0], Globals.origin[1]);
-  ctx.lineTo(Globals.origin[0] - length, Globals.origin[1]);
-  ctx.stroke();
-  
-  ctx.beginPath();
-  ctx.moveTo(Globals.origin[0], Globals.origin[1]);
-  ctx.lineTo(Globals.origin[0], Globals.origin[1] + length);
-  ctx.stroke();
-  
-  ctx.beginPath();
-  ctx.moveTo(Globals.origin[0], Globals.origin[1]);
-  ctx.lineTo(Globals.origin[0], Globals.origin[1] - length);
-  ctx.stroke();
-}
-
 // Adds post world.render() effects including property windows, springs, vectors, and highlights.
 function postRender(isKeyframe){
   var selectedBody = Globals.selectedBody;
   var originObject = Globals.originObject;
   
-  drawOrigin();
   drawLines();
   drawVectors();
 
@@ -465,8 +513,7 @@ function postRender(isKeyframe){
 
 // Draws a blue highlight around the nth mini-keyframe canvas
 // Removes all highlights if n === false
-function highlightKeycanvas(n)
-{
+function highlightKeycanvas(n){
   // Remove highlight on all keyframes
   for(var i=0; i < Globals.numKeyframes; i++)
     $("#" + "keyframe-" + i).attr("style","");
